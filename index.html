@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>티처블머신 마이크로비트 브리지</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* 레이아웃: 왼쪽 단계 패널(모델→연결→전송) + 오른쪽 카메라·인식 결과, 좁은 화면에서는 한 줄로 */
+:root{
+  --bg:#f3f5f2; --panel:#ffffff; --ink:#18221d; --muted:#5d6b63; --line:#d9e0db;
+  --accent:#1f7a55; --accent-ink:#ffffff; --soft:#e4f1ea; --warn:#b5561a; --led:#e5392f;
+  --display:"Noto Sans KR",system-ui,sans-serif; --body:"Noto Sans KR",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#111814; --panel:#18221d; --ink:#e7efe9; --muted:#9aaba1; --line:#2c3a32;
+  --accent:#43b883; --accent-ink:#0b1510; --soft:#1f3329; --warn:#e8935a; --led:#ff5a4e; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px;margin-bottom:22px}
+h1{font:900 clamp(26px,3.4vw,36px)/1.2 var(--display);margin:0;letter-spacing:-.02em;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+.step{display:flex;align-items:center;gap:10px;margin:0 0 12px;font:700 19px/1.3 var(--display)}
+.step b{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:600 16px var(--mono)}
+label{display:block;font-weight:500;margin:10px 0 6px}
+input[type=text],select{width:100%;font:16px var(--body);padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+button{font:700 16px var(--body);padding:11px 16px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);cursor:pointer}
+button.ghost{background:transparent;color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.status{margin-top:10px;font-size:15px;color:var(--muted)}
+.status.ok{color:var(--accent);font-weight:700}
+.status.err{color:var(--warn);font-weight:700}
+.hint{font-size:14px;color:var(--muted);margin:6px 0 0}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px}
+@media (max-width:620px){.stage{grid-template-columns:1fr}}
+#cam{aspect-ratio:1;max-width:100%;width:100%;background:var(--soft);border-radius:12px;display:grid;place-items:center;overflow:hidden;color:var(--muted);text-align:center;padding:12px}
+#cam canvas{width:100%;height:100%;object-fit:cover;border-radius:10px}
+.now{display:flex;flex-direction:column;gap:10px}
+.now .lab{font-size:14px;color:var(--muted)}
+#topName{font:900 34px/1.15 var(--display);word-break:break-all}
+#topPct{font:600 22px var(--mono);color:var(--accent)}
+.sent{background:var(--soft);border-radius:10px;padding:10px 12px}
+#sentVal{font:600 26px var(--mono)}
+.mb{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:120px;padding:10px;background:#20262a;border-radius:10px}
+.mb i{aspect-ratio:1;border-radius:3px;background:#3a4247}
+.mb i.on{background:var(--led);box-shadow:0 0 8px var(--led)}
+.bars{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.bar{display:grid;grid-template-columns:minmax(0,130px) 1fr 58px;gap:10px;align-items:center}
+.bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.bar .t{height:22px;background:var(--soft);border-radius:6px;overflow:hidden}
+.bar .f{height:100%;width:0;background:var(--accent);transition:width .15s}
+.bar em{font:600 15px var(--mono);font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
+.bar.top span{font-weight:900}
+table{border-collapse:collapse;width:100%;font-size:15px}
+td,th{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left}
+th{font-weight:700;color:var(--muted)}
+td code{font:600 15px var(--mono)}
+pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;font:14px/1.55 var(--mono);overflow-x:auto;white-space:pre}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button{padding:7px 12px;font-size:15px}
+#log{height:120px;overflow:auto;font:13px/1.5 var(--mono);background:var(--bg);border-radius:8px;padding:8px 10px;color:var(--muted)}
+details summary{cursor:pointer;font-weight:700}
+@media (prefers-reduced-motion:reduce){.bar .f{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>티처블머신 × 마이크로비트</h1>
+    <p>웹캠으로 인식한 결과를 마이크로비트에 보내 LED·소리·모터를 움직여요.</p>
+  </div>
+  <p class="hint">크롬 또는 엣지(PC)에서 열어 주세요.</p>
+</header>
+
+<div class="grid">
+<div class="col">
+  <section class="card">
+    <h2 class="step"><b>1</b>모델 불러오기</h2>
+    <label for="modelUrl">티처블머신 모델 링크</label>
+    <input type="text" id="modelUrl" placeholder="https://teachablemachine.withgoogle.com/models/XXXXXXX/">
+    <p class="hint">티처블머신 → 모델 내보내기 → 업로드 후 나오는 공유 링크를 붙여넣으세요. (이미지 프로젝트)</p>
+    <div class="row">
+      <button id="btnLoad">모델 불러오기</button>
+      <button id="btnCam" class="ghost" disabled>카메라 켜기</button>
+    </div>
+    <label for="camSel" style="margin-top:12px">카메라 선택</label>
+    <select id="camSel"><option value="">기본 카메라</option></select>
+    <div class="status" id="modelStatus">모델이 아직 없어요.</div>
+  </section>
+
+  <section class="card">
+    <h2 class="step"><b>2</b>마이크로비트 연결</h2>
+    <div class="row" style="margin-top:0">
+      <button id="btnUsb">USB로 연결</button>
+      <button id="btnBle" class="ghost">블루투스로 연결</button>
+      <button id="btnDisc" class="ghost" disabled>연결 끊기</button>
+    </div>
+    <div class="status" id="mbStatus">연결 안 됨</div>
+    <p class="hint">USB가 가장 쉬워요. 블루투스는 아래 '블루투스 코드'를 마이크로비트에 먼저 넣어야 해요.</p>
+  </section>
+
+  <section class="card">
+    <h2 class="step"><b>3</b>보내는 방법</h2>
+    <label for="sendMode">보낼 값</label>
+    <select id="sendMode">
+      <option value="num">클래스 번호 (0, 1, 2 …) — 추천</option>
+      <option value="name">클래스 이름 (영문 권장)</option>
+    </select>
+    <label for="th">이 확률 이상일 때만 보내기: <strong id="thVal">80%</strong></label>
+    <input type="range" id="th" min="50" max="99" value="80">
+    <label for="when">보내는 때</label>
+    <select id="when">
+      <option value="change">결과가 바뀔 때만</option>
+      <option value="1000">1초마다</option>
+      <option value="500">0.5초마다</option>
+    </select>
+    <div class="row">
+      <button id="btnTest" class="ghost">테스트로 "0" 보내기</button>
+    </div>
+  </section>
+</div>
+
+<div class="col">
+  <section class="card">
+    <div class="stage">
+      <div id="cam">모델을 불러오고<br>카메라를 켜면 여기에 화면이 나와요.</div>
+      <div class="now">
+        <div><div class="lab">지금 인식된 것</div><div id="topName">—</div><div id="topPct">0%</div></div>
+        <div class="sent"><div class="lab">마이크로비트로 보낸 값</div><div id="sentVal">—</div></div>
+        <div><div class="lab">마이크로비트 화면(미리보기)</div><div class="mb" id="mbLed"></div></div>
+      </div>
+    </div>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <section class="card">
+    <h2 class="step" style="margin-bottom:8px">클래스 번호표</h2>
+    <table><thead><tr><th>번호</th><th>클래스 이름</th><th>보내지는 값</th></tr></thead><tbody id="mapBody"><tr><td colspan="3" style="color:var(--muted)">모델을 불러오면 자동으로 채워져요.</td></tr></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2 class="step" style="margin-bottom:8px">마이크로비트 코드 (MakeCode 자바스크립트)</h2>
+    <div class="tabs">
+      <button id="tabUsb">USB 코드</button>
+      <button id="tabBle" class="ghost">블루투스 코드</button>
+      <button id="btnCopy" class="ghost">복사</button>
+    </div>
+    <pre id="code"></pre>
+    <p class="hint">makecode.microbit.org → 새 프로젝트 → 위쪽 'JavaScript' 탭에 붙여넣으면 블록으로도 볼 수 있어요.</p>
+  </section>
+
+  <section class="card">
+    <details><summary>통신 기록</summary><div id="log" style="margin-top:10px"></div></details>
+  </section>
+</div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let model=null, webcam=null, labels=[], running=false;
+let port=null, writer=null, bleChar=null, bleDevice=null;
+let lastSent=null, lastSentAt=0;
+const enc=new TextEncoder();
+const UART='6e400001-b5a3-f393-e0a9-e50e24dcca9e', UART_RX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+function log(m){const d=$('log');d.textContent+=new Date().toLocaleTimeString()+'  '+m+'\n';d.scrollTop=d.scrollHeight}
+function setStatus(id,msg,kind){const e=$(id);e.textContent=msg;e.className='status'+(kind?' '+kind:'')}
+
+// 마이크로비트 LED 미리보기 (숫자 0~9)
+const DIG={0:'0111010011101011100101110',1:'0010001100001000010001110',2:'1110000010011001000011110',3:'1111000010001001001001100',4:'0011001010100101111100010',5:'1111110000111100000111110',6:'0001000100011101000101110',7:'1111100010001000100010000',8:'0111010001011101000101110',9:'0111010001011110001000100'};
+const led=$('mbLed');for(let i=0;i<25;i++)led.appendChild(document.createElement('i'));
+function showLed(v){const p=DIG[v];led.querySelectorAll('i').forEach((c,i)=>c.classList.toggle('on',!!p&&p[i]==='1'))}
+
+// 1. 모델
+try{$('modelUrl').value=localStorage.getItem('tmUrl')||''}catch(e){}
+$('btnLoad').onclick=async()=>{
+  let url=$('modelUrl').value.trim();
+  if(!url){setStatus('modelStatus','모델 링크를 넣어 주세요.','err');return}
+  if(!url.endsWith('/'))url+='/';
+  setStatus('modelStatus','불러오는 중…');
+  try{
+    model=await tmImage.load(url+'model.json',url+'metadata.json');
+    labels=model.getClassLabels();
+    try{localStorage.setItem('tmUrl',url)}catch(e){}
+    buildBars();buildMap();
+    setStatus('modelStatus',`모델 준비 완료 · 클래스 ${labels.length}개`,'ok');
+    $('btnCam').disabled=false;log('모델 로드: '+labels.join(', '));
+  }catch(e){setStatus('modelStatus','불러오지 못했어요. 링크가 맞는지, 모델을 "업로드"했는지 확인해 주세요.','err');log(e)}
+};
+function buildBars(){const b=$('bars');b.innerHTML='';labels.forEach((l,i)=>{b.insertAdjacentHTML('beforeend',`<div class="bar" id="bar${i}"><span title="${l}">${i}. ${l}</span><div class="t"><div class="f"></div></div><em>0%</em></div>`)})}
+function buildMap(){$('mapBody').innerHTML=labels.map((l,i)=>`<tr><td><code>${i}</code></td><td>${l}</td><td><code>${valueFor(i)}</code></td></tr>`).join('');renderCode()}
+function valueFor(i){return $('sendMode').value==='num'?String(i):labels[i]}
+
+// 카메라 목록
+async function listCams(){try{const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');const s=$('camSel');const cur=s.value;s.innerHTML='<option value="">기본 카메라</option>'+ds.map((d,i)=>`<option value="${d.deviceId}">${d.label||'카메라 '+(i+1)}</option>`).join('');s.value=cur}catch(e){}}
+$('btnCam').onclick=async()=>{
+  if(webcam){webcam.stop();running=false}
+  try{
+    webcam=new tmImage.Webcam(300,300,true);
+    await webcam.setup($('camSel').value?{deviceId:$('camSel').value}:{});
+    await webcam.play();
+    $('cam').innerHTML='';$('cam').appendChild(webcam.canvas);
+    running=true;$('btnCam').textContent='카메라 다시 켜기';listCams();loop();
+  }catch(e){setStatus('modelStatus','카메라를 켤 수 없어요. 브라우저의 카메라 권한을 허용해 주세요.','err');log(e)}
+};
+$('camSel').onchange=()=>{if(webcam)$('btnCam').click()};
+listCams();
+
+async function loop(){if(!running)return;webcam.update();await predict();requestAnimationFrame(loop)}
+async function predict(){
+  const p=await model.predict(webcam.canvas);
+  let top=0;p.forEach((r,i)=>{if(r.probability>p[top].probability)top=i});
+  p.forEach((r,i)=>{const b=$('bar'+i);if(!b)return;const pc=Math.round(r.probability*100);b.querySelector('.f').style.width=pc+'%';b.querySelector('em').textContent=pc+'%';b.classList.toggle('top',i===top)});
+  const pct=Math.round(p[top].probability*100);
+  $('topName').textContent=labels[top];$('topPct').textContent=pct+'%';
+  if(pct>=+$('th').value)maybeSend(top);
+}
+function maybeSend(i){
+  const v=valueFor(i),w=$('when').value,now=Date.now();
+  if(w==='change'?v===lastSent:now-lastSentAt<+w)return;
+  send(v);
+}
+
+// 2. 연결
+async function send(v){
+  lastSent=v;lastSentAt=Date.now();
+  $('sentVal').textContent=v;showLed($('sendMode').value==='num'?v:null);
+  const data=enc.encode(v+'\n');
+  try{
+    if(writer){await writer.write(data);log('USB → '+v)}
+    else if(bleChar){await bleChar.writeValue(data);log('BLE → '+v)}
+  }catch(e){log('보내기 실패: '+e.message)}
+}
+$('btnUsb').onclick=async()=>{
+  if(!('serial' in navigator)){setStatus('mbStatus','이 브라우저는 USB 연결을 지원하지 않아요. PC용 크롬/엣지를 써 주세요.','err');return}
+  try{
+    port=await navigator.serial.requestPort({filters:[{usbVendorId:0x0d28}]});
+    await port.open({baudRate:115200});
+    writer=port.writable.getWriter();
+    setStatus('mbStatus','USB로 연결됨','ok');$('btnDisc').disabled=false;showTab('usb');log('USB 연결');
+  }catch(e){setStatus('mbStatus','연결하지 못했어요: '+e.message,'err')}
+};
+$('btnBle').onclick=async()=>{
+  if(!navigator.bluetooth){setStatus('mbStatus','이 브라우저는 블루투스 연결을 지원하지 않아요.','err');return}
+  try{
+    bleDevice=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'BBC micro:bit'}],optionalServices:[UART]});
+    bleDevice.addEventListener('gattserverdisconnected',()=>{bleChar=null;setStatus('mbStatus','블루투스 연결이 끊어졌어요.','err');log('BLE 끊김')});
+    setStatus('mbStatus','블루투스 연결 중…');
+    const srv=await bleDevice.gatt.connect();
+    const svc=await srv.getPrimaryService(UART);
+    bleChar=await svc.getCharacteristic(UART_RX);
+    setStatus('mbStatus','블루투스로 연결됨: '+bleDevice.name,'ok');$('btnDisc').disabled=false;showTab('ble');log('BLE 연결');
+  }catch(e){setStatus('mbStatus','연결하지 못했어요. 블루투스 코드를 넣었는지 확인해 주세요. ('+e.message+')','err')}
+};
+$('btnDisc').onclick=async()=>{
+  try{if(writer){writer.releaseLock();writer=null}if(port){await port.close();port=null}if(bleDevice?.gatt.connected)bleDevice.gatt.disconnect();bleChar=null}catch(e){}
+  setStatus('mbStatus','연결 안 됨');$('btnDisc').disabled=true;log('연결 끊음');
+};
+$('btnTest').onclick=()=>send($('sendMode').value==='num'?'0':(labels[0]||'test'));
+
+// 3. 설정
+$('th').oninput=()=>$('thVal').textContent=$('th').value+'%';
+$('sendMode').onchange=()=>{lastSent=null;if(labels.length)buildMap();else renderCode()};
+
+// 마이크로비트 코드
+let tab='usb';
+function caseLines(indent){
+  const n=Math.max(labels.length,3),num=$('sendMode').value==='num';
+  const L=[];for(let i=0;i<n;i++){const v=num?String(i):(labels[i]||'class'+i);const note=labels[i]?`  // ${labels[i]}`:'';
+    L.push(`${indent}${i?'} else if':'if'} (msg == "${v}") {${note}`);
+    L.push(`${indent}    basic.showNumber(${i})`);}
+  L.push(`${indent}}`);return L.join('\n');
+}
+function renderCode(){
+  const usb=`// USB(시리얼)로 인식 결과 받기
+let msg = ""
+serial.setBaudRate(BaudRate.BaudRate115200)
+basic.showIcon(IconNames.Yes)
+serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+    msg = serial.readUntil(serial.delimiters(Delimiters.NewLine)).trim()
+${caseLines('    ')}
+})`;
+  const ble=`// 블루투스로 인식 결과 받기
+// ① 확장 프로그램에서 'bluetooth' 추가 (radio와 함께 쓸 수 없어요)
+// ② 톱니바퀴 → 프로젝트 설정 → 'No Pairing Required' 선택
+let msg = ""
+bluetooth.startUartService()
+basic.showIcon(IconNames.Square)
+bluetooth.onBluetoothConnected(function () { basic.showIcon(IconNames.Yes) })
+bluetooth.onBluetoothDisconnected(function () { basic.showIcon(IconNames.No) })
+bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+    msg = bluetooth.uartReadUntil(serial.delimiters(Delimiters.NewLine)).trim()
+${caseLines('    ')}
+})`;
+  $('code').textContent=tab==='usb'?usb:ble;
+}
+function showTab(t){tab=t;$('tabUsb').className=t==='usb'?'':'ghost';$('tabBle').className=t==='ble'?'':'ghost';renderCode()}
+$('tabUsb').onclick=()=>showTab('usb');$('tabBle').onclick=()=>showTab('ble');
+$('btnCopy').onclick=async()=>{try{await navigator.clipboard.writeText($('code').textContent);$('btnCopy').textContent='복사됨'}catch(e){const r=document.createRange();r.selectNodeContents($('code'));getSelection().removeAllRanges();getSelection().addRange(r);$('btnCopy').textContent='선택됨 (Ctrl+C)'}setTimeout(()=>$('btnCopy').textContent='복사',1500)};
+renderCode();
+</script>
+</body>
+</html>
